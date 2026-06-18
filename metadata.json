@@ -1,0 +1,6 @@
+{
+  "name": "Reinforcement Learning Controller",
+  "description": "An interactive inverted pendulum and double-joint inverted pendulum physics simulation training real-time Reinforcement Learning agents (Q-learning & SARSA) with dynamic analytics, Phase Space state maps, and an integrated Gemini AI Tutor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
