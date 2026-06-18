@@ -5,8 +5,8 @@
 A real-time interactive simulation environment for studying stabilization and control of the nonlinear **Inverted Pendulum (Cart-Pole)** system using both classical control theory and modern reinforcement learning algorithms.
 
 <p align="center">
-  <img src="./assets/PID.png" width="48%" alt="PID Controller"/>
-  <img src="./assets/AI.png" width="48%" alt="Reinforcement Learning Controller"/>
+  <img src="PID.png" width="48%" alt="PID Controller"/>
+  <img src="AI.png" width="48%" alt="Reinforcement Learning Controller"/>
 </p>
 
 <p align="center">
