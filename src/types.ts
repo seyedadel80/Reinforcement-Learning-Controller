@@ -2,7 +2,6 @@
  * Types & Interfaces for the Reinforcement Learning Control Simulator.
  */
 
-export type EnvType = 'cartpole' | 'double_pendulum';
 export type AlgorithmType = 'q_learning' | 'sarsa';
 
 export interface CartPoleState {
@@ -12,16 +11,7 @@ export interface CartPoleState {
   thetaDot: number;    // Pole angular velocity
 }
 
-export interface DoublePendulumState {
-  x: number;            // Cart position on track
-  xDot: number;         // Cart velocity
-  theta1: number;       // Angle of inner arm (0 is vertical upright)
-  theta1Dot: number;    // Angular velocity of inner arm
-  theta2: number;       // Angle of outer arm (0 is vertical upright)
-  theta2Dot: number;    // Angular velocity of outer arm
-}
-
-export type SimulatorState = CartPoleState | DoublePendulumState;
+export type SimulatorState = CartPoleState;
 
 export interface RLParams {
   algorithm: AlgorithmType;
@@ -41,13 +31,6 @@ export interface PhysicsParams {
   cartMass: number;      // For cart-pole
   friction: number;
   maxForce: number;      // Max external force/torque
-}
-
-export interface PIDParams {
-  enabled: boolean;
-  Kp: number;
-  Ki: number;
-  Kd: number;
 }
 
 export interface EpisodeLog {

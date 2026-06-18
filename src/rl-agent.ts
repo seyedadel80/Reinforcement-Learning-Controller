@@ -1,10 +1,10 @@
-import { RLParams, EnvType } from "./types";
+import { RLParams } from "./types";
 import { normalizeAngle } from "./simulator";
 
 // Discrete force actions mapping:
-// 0: Negative force/torque (-MaxForce)
-// 1: No force/torque (0)
-// 2: Positive force/torque (+MaxForce)
+// 0: Negative force (-MaxForce)
+// 1: No force (0)
+// 2: Positive force (+MaxForce)
 export const ACTIONS = [-1, 0, 1] as const;
 export type ActionIndex = 0 | 1 | 2;
 
@@ -12,14 +12,12 @@ export class RLAgent {
   // tabular Q value storage: StateIndex -> number[3] (for 3 action values)
   public qTable: Map<number, [number, number, number]>;
   private params: RLParams;
-  private envType: EnvType;
 
   // Track exploration vs exploitation counts
   public exploreCount = 0;
   public exploitCount = 0;
 
-  constructor(envType: EnvType, params: RLParams) {
-    this.envType = envType;
+  constructor(params: RLParams) {
     this.params = params;
     this.qTable = new Map();
   }
@@ -72,70 +70,14 @@ export class RLAgent {
   }
 
   /**
-   * Discretizes Double Joint Inverted Pendulum (2-DoF Double Pendulum) State
-   * Space: 4D state space [theta1, theta1Dot, theta2, theta2Dot]
-   * We assign: 6 x 5 x 6 x 5 = 900 states 
-   */
-  public discretizeDoublePendulum(
-    theta1: number,
-    theta1Dot: number,
-    theta2: number,
-    theta2Dot: number
-  ): number {
-    const t1Bins = 6;
-    const t1DotBins = 5;
-    const t2Bins = 6;
-    const t2DotBins = 5;
-
-    // Outer and inner joints use our warping function for stabilization priority
-    const t1Norm = normalizeAngle(theta1);
-    const t1Warped = Math.sign(t1Norm) * Math.pow(Math.abs(t1Norm) / Math.PI, 0.6);
-    const t1Bin = Math.max(0, Math.min(t1Bins - 1, Math.floor(((t1Warped + 1) / 2) * t1Bins)));
-
-    const maxSpeed1 = 10.0;
-    const t1DotClamped = Math.max(-maxSpeed1, Math.min(maxSpeed1, theta1Dot));
-    const t1DotWarped = Math.sign(t1DotClamped) * Math.pow(Math.abs(t1DotClamped) / maxSpeed1, 0.7);
-    const t1DotBin = Math.max(0, Math.min(t1DotBins - 1, Math.floor(((t1DotWarped + 1) / 2) * t1DotBins)));
-
-    const t2Norm = normalizeAngle(theta2);
-    const t2Warped = Math.sign(t2Norm) * Math.pow(Math.abs(t2Norm) / Math.PI, 0.6);
-    const t2Bin = Math.max(0, Math.min(t2Bins - 1, Math.floor(((t2Warped + 1) / 2) * t2Bins)));
-
-    const maxSpeed2 = 12.0;
-    const t2DotClamped = Math.max(-maxSpeed2, Math.min(maxSpeed2, theta2Dot));
-    const t2DotWarped = Math.sign(t2DotClamped) * Math.pow(Math.abs(t2DotClamped) / maxSpeed2, 0.7);
-    const t2DotBin = Math.max(0, Math.min(t2DotBins - 1, Math.floor(((t2DotWarped + 1) / 2) * t2DotBins)));
-
-    // Flatten multidirectional 4D state array to 1D index [0..899]
-    return t1Bin + 
-           t1Bins * (
-             t1DotBin + 
-             t1DotBins * (
-               t2Bin + 
-               t2Bins * t2DotBin
-             )
-           );
-  }
-
-  /**
    * Retrieves the discrete state identifier based on environment
    */
   public getStateIndex(state: any): number {
-    if (this.envType === "cartpole") {
-      const x = state.x !== undefined ? state.x : 0;
-      const xDot = state.xDot !== undefined ? state.xDot : 0;
-      const t = state.theta !== undefined ? state.theta : 0;
-      const td = state.thetaDot !== undefined ? state.thetaDot : 0;
-      return this.discretizeCartPole(x, xDot, t, td);
-    } else {
-      // Fallback safely if properties are temporarily uninitialized during component transitions
-      const t1 = state.theta1 !== undefined ? state.theta1 : (state.theta || 0);
-      const t1d = state.theta1Dot !== undefined ? state.theta1Dot : (state.thetaDot || 0);
-      const t2 = state.theta2 !== undefined ? state.theta2 : 0;
-      const t2d = state.theta2Dot !== undefined ? state.theta2Dot : 0;
-      
-      return this.discretizeDoublePendulum(t1, t1d, t2, t2d);
-    }
+    const x = state.x !== undefined ? state.x : 0;
+    const xDot = state.xDot !== undefined ? state.xDot : 0;
+    const t = state.theta !== undefined ? state.theta : 0;
+    const td = state.thetaDot !== undefined ? state.thetaDot : 0;
+    return this.discretizeCartPole(x, xDot, t, td);
   }
 
   /**
@@ -203,7 +145,12 @@ export class RLAgent {
     const currentQ = this.getQValues(stateIndex);
     const nextQ = this.getQValues(nextStateIndex);
     
-    const alpha = this.params.learningRate;
+    // Dynamically scale/decay alpha (learning rate) as epsilon declines.
+    // This stabilizes the late-stage Q-Table so random exploration mistakes 
+    // or late-stage turbulence doesn't destroy excellent converged behaviors.
+    const baseAlpha = this.params.learningRate;
+    const alpha = Math.max(0.012, baseAlpha * Math.sqrt(this.params.epsilon));
+    
     const gamma = this.params.discountFactor;
     
     let target = 0;
@@ -218,7 +165,7 @@ export class RLAgent {
       target = reward + gamma * nextQ[chosenNextAction];
     }
     
-    // Temp computation
+    // Temporal difference update
     currentQ[action] = currentQ[action] + alpha * (target - currentQ[action]);
   }
 

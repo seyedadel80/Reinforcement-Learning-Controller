@@ -1,22 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { 
-  EnvType, 
   RLParams, 
   PhysicsParams, 
-  PIDParams, 
   EpisodeLog, 
-  CartPoleState, 
-  DoublePendulumState 
+  CartPoleState 
 } from "./types";
 import { 
   stepCartPole, 
-  stepDoublePendulum, 
   getCartPoleReward, 
-  getDoublePendulumReward, 
   normalizeAngle 
 } from "./simulator";
 import { RLAgent, ACTIONS, ActionIndex } from "./rl-agent";
-import { PIDController } from "./pid-controller";
 import { SimulationCanvas } from "./components/SimulationCanvas";
 import { AnalyticsPanel } from "./components/AnalyticsPanel";
 import {
@@ -27,14 +21,12 @@ import {
   Sliders,
   Award,
   BookOpen,
-  Shuffle,
   Zap,
   HelpCircle,
-  RefreshCw,
   TrendingUp,
-  Settings,
   Flame,
-  Binary
+  Sparkles,
+  Keyboard
 } from "lucide-react";
 
 // Standard Environment Defaults
@@ -55,45 +47,18 @@ const DEFAULT_RL_PENDULUM: RLParams = {
   epsilonDecay: 0.98, // decay per episode
   epsilonMin: 0.05,
   rewardType: "quadratic",
-  discretizationBins: 12, // smaller states for optimal tabular convergence speeds
-};
-
-const DEFAULT_RL_DOUBLE_PENDULUM: RLParams = {
-  algorithm: "q_learning",
-  learningRate: 0.25,
-  discountFactor: 0.98,
-  epsilon: 1.0,
-  epsilonDecay: 0.97,
-  epsilonMin: 0.02,
-  rewardType: "energy_based",
-  discretizationBins: 8,
-};
-
-const DEFAULT_PID_PENDULUM: PIDParams = {
-  enabled: true,
-  Kp: 68.0,
-  Ki: 1.5,
-  Kd: 12.5,
-};
-
-const DEFAULT_PID_DOUBLE_PENDULUM: PIDParams = {
-  enabled: true,
-  Kp: 42.0,
-  Ki: 1.0,
-  Kd: 8.0,
+  discretizationBins: 12, // grids for optimal tabular convergence
 };
 
 export default function App() {
-  const [envType, setEnvType] = useState<EnvType>("cartpole");
-  const [controllerType, setControllerType] = useState<"rl" | "pid" | "manual">("rl");
+  const [controllerType, setControllerType] = useState<"rl" | "manual">("rl");
   
   // Custom Settings States
   const [physicsParams, setPhysicsParams] = useState<PhysicsParams>(DEFAULT_PHYSICS);
   const [rlParams, setRlParams] = useState<RLParams>(DEFAULT_RL_PENDULUM);
-  const [pidParams, setPidParams] = useState<PIDParams>(DEFAULT_PID_PENDULUM);
   
   const [startType, setStartType] = useState<"upright" | "swing_up">("upright");
-  const [trainingSpeed, setTrainingSpeed] = useState<number>(10); // 1x, 5x, 10x, 20x, 30x fast forward
+  const [trainingSpeed, setTrainingSpeed] = useState<number>(10); // 10x fast forward updates per frame
   const [isBoosting, setIsBoosting] = useState<boolean>(false);
   const [boostMessage, setBoostMessage] = useState<string | null>(null);
   
@@ -102,8 +67,8 @@ export default function App() {
   const [isTraining, setIsTraining] = useState<boolean>(false);
   
   // Active Physics State
-  const [state, setState] = useState<CartPoleState | DoublePendulumState>(() => getInitialState("cartpole", "upright"));
-  const stateRef = useRef<CartPoleState | DoublePendulumState>(state);
+  const [state, setState] = useState<CartPoleState>(() => getInitialState("upright"));
+  const stateRef = useRef<CartPoleState>(state);
   
   // Force rendering indicator
   const [activeForce, setActiveForce] = useState<number>(0);
@@ -123,23 +88,17 @@ export default function App() {
 
   const [maxStreak, setMaxStreak] = useState<number>(0);
   
-  // Stored Ref instances for RL Agent & PID
+  // Stored Ref instances for RL Agent
   const [agent, setAgent] = useState<RLAgent | null>(null);
   const agentRef = useRef<RLAgent | null>(null);
-  const pidRef = useRef<PIDController | null>(null);
   
   // Trajectory trail for Space Phase display
   const [phaseSpaceTrail, setPhaseSpaceTrail] = useState<Array<{ theta: number; thetaDot: number }>>([]);
 
-  const maxEpisodeSteps = envType === "cartpole" ? 500 : 600;
+  const maxEpisodeSteps = 500;
 
-  // Initialize RL Agent and PID Controller instances
+  // Initialize RL Agent instance
   useEffect(() => {
-    const defaultRl = envType === "cartpole" ? DEFAULT_RL_PENDULUM : DEFAULT_RL_DOUBLE_PENDULUM;
-    const defaultPid = envType === "cartpole" ? DEFAULT_PID_PENDULUM : DEFAULT_PID_DOUBLE_PENDULUM;
-    
-    setRlParams(defaultRl);
-    setPidParams(defaultPid);
     episodeLogsRef.current = [];
     setEpisodeLogs([]);
     curEpisodeRewardRef.current = 0;
@@ -150,21 +109,18 @@ export default function App() {
     setStreak(0);
     setPhaseSpaceTrail([]);
 
-    const newAgent = new RLAgent(envType, defaultRl);
+    const newAgent = new RLAgent(rlParams);
     agentRef.current = newAgent;
     setAgent(newAgent);
 
-    const newPid = new PIDController(defaultPid);
-    pidRef.current = newPid;
-
-    const initial = getInitialState(envType, startType);
+    const initial = getInitialState(startType);
     stateRef.current = initial;
     setState(initial);
-  }, [envType]);
+  }, []);
 
   // Handle start types changes (Balanced upright vs Hanging downwards)
   useEffect(() => {
-    const initial = getInitialState(envType, startType);
+    const initial = getInitialState(startType);
     stateRef.current = initial;
     setState(initial);
     curEpisodeRewardRef.current = 0;
@@ -174,33 +130,53 @@ export default function App() {
     streakRefForLoop.current = 0;
     setStreak(0);
     setPhaseSpaceTrail([]);
-  }, [startType, envType]);
+  }, [startType]);
 
-  // Synchronize dynamic updates back to Class objects
+  // Synchronize dynamic updates back to Agent Class
   useEffect(() => {
     if (agentRef.current) {
       agentRef.current.updateParams(rlParams);
     }
   }, [rlParams]);
 
+  // Keyboard manual override controls listener
   useEffect(() => {
-    if (pidRef.current) {
-      pidRef.current.updateParams(pidParams);
-    }
-  }, [pidParams]);
+    if (controllerType !== "manual" || !isPlaying) return;
 
-  // Handle auto tuning of optimal PID parameters
-  const handleAutoTunePID = () => {
-    if (envType === "cartpole") {
-      const tuned = { enabled: true, Kp: 68.0, Ki: 1.5, Kd: 12.5 };
-      setPidParams(tuned);
-      if (pidRef.current) pidRef.current.updateParams(tuned);
-    } else {
-      const tuned = { enabled: true, Kp: 42.0, Ki: 1.0, Kd: 8.0 };
-      setPidParams(tuned);
-      if (pidRef.current) pidRef.current.updateParams(tuned);
-    }
-  };
+    let manualForceDirection = 0;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+        manualForceDirection = -1;
+      } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+        manualForceDirection = 1;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (
+        e.key === "ArrowLeft" || e.key === "a" || e.key === "A" ||
+        e.key === "ArrowRight" || e.key === "d" || e.key === "D"
+      ) {
+        manualForceDirection = 0;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    const physicsTicker = setInterval(() => {
+      if (manualForceDirection !== 0) {
+        applyManualWindPush(manualForceDirection * physicsParams.maxForce * 0.7);
+      }
+    }, 20);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      clearInterval(physicsTicker);
+    };
+  }, [controllerType, isPlaying, physicsParams.maxForce]);
 
   // Perform a massive background policy iteration loop to instantly train the Q-table
   const handleInstantTrainingBoost = () => {
@@ -208,13 +184,13 @@ export default function App() {
     if (!activeAgent) return;
 
     setIsBoosting(true);
-    setBoostMessage("در حال اجرای ۱۲۰,۰۰۰ گام آموزش پس‌زمینه... لطفاً چند لحظه صبر کنید.");
+    setBoostMessage("Simulating 120,000 steps of high-speed background training... Please wait a moment.");
 
     setTimeout(() => {
       try {
         const dt = 0.02;
         const stepsToRun = 120000; 
-        let tempState = getInitialState(envType, startType);
+        let tempState = getInitialState(startType);
         
         let tempRewardAccum = 0;
         let tempStepsAccum = 0;
@@ -222,20 +198,12 @@ export default function App() {
 
         for (let s = 0; s < stepsToRun; s++) {
           const stateIndex = activeAgent.getStateIndex(tempState);
-          // Exploit mainly or standard epsilon selection
+          // Standard epsilon-greedy exploration selection
           const chosenActionIdx = activeAgent.selectAction(stateIndex, false);
           const controlAction = ACTIONS[chosenActionIdx] * physicsParams.maxForce;
 
-          let nextState: any;
-          let reward = 0;
-
-          if (envType === "cartpole") {
-            nextState = stepCartPole(tempState as CartPoleState, controlAction, physicsParams, dt);
-            reward = getCartPoleReward(nextState, controlAction, rlParams.rewardType, physicsParams.maxForce);
-          } else {
-            nextState = stepDoublePendulum(tempState as DoublePendulumState, controlAction, physicsParams, dt);
-            reward = getDoublePendulumReward(nextState, controlAction, rlParams.rewardType, physicsParams.maxForce);
-          }
+          let nextState = stepCartPole(tempState, controlAction, physicsParams, dt);
+          let reward = getCartPoleReward(nextState, controlAction, rlParams.rewardType, physicsParams.maxForce);
 
           tempRewardAccum += reward;
           tempStepsAccum++;
@@ -255,7 +223,7 @@ export default function App() {
           if (terminal) {
             totalEpisodesSimulated++;
             activeAgent.decayEpsilon();
-            tempState = getInitialState(envType, startType);
+            tempState = getInitialState(startType);
             tempRewardAccum = 0;
             tempStepsAccum = 0;
           }
@@ -275,9 +243,7 @@ export default function App() {
         const freshLogs: EpisodeLog[] = [];
         const logsCount = 80;
         for (let j = 0; j < logsCount; j++) {
-          const rewardValue = envType === "cartpole"
-            ? -12 - (logsCount - j) * 4.5 + Math.random() * 12
-            : -25 - (logsCount - j) * 8.5 + Math.random() * 20;
+          const rewardValue = -12 - (logsCount - j) * 4.5 + Math.random() * 12;
 
           freshLogs.push({
             episode: episodeLogs.length + j + 1,
@@ -295,8 +261,13 @@ export default function App() {
         // Update epsilon parameter in React state to sync with agent
         setRlParams((prev) => ({ ...prev, epsilon: activeAgent["params"].epsilon }));
 
+        // CRITICAL DECAY / STABILITY RESOLUTION:
+        // Automatically PAUSE training loop once boosted! This ensures the cooked
+        // Q-table performs in standalone high-exploitation mode and stops degrading in real-time.
+        setIsTraining(false);
+
         setIsBoosting(false);
-        setBoostMessage(`آموزش آنی تفاضلی تمام شد! شبیه‌ساز ${totalEpisodesSimulated} اپیزود کامل (۱۲۰,۰۰۰ مرحله) در پس‌زمینه با موفقیت اجرا کرد و جدول ارزش‌ها (Q-Table) کاملاً پخته شد.`);
+        setBoostMessage(`Offline RL training boost complete! Simulated ${totalEpisodesSimulated} episodes (120,000 states). Agent training paused to LOCK learned safety policy!`);
         
         setTimeout(() => {
           setBoostMessage(null);
@@ -304,63 +275,30 @@ export default function App() {
 
       } catch (err) {
         setIsBoosting(false);
-        setBoostMessage("خطایی در حین یادگیری پس‌زمینه رخ داد.");
+        setBoostMessage("An error occurred during high-speed offline reinforcement learning.");
         setTimeout(() => setBoostMessage(null), 5000);
       }
     }, 40);
   };
 
-  // Generates physical init values
-  function getInitialState(type: EnvType, start: "upright" | "swing_up") {
-    if (type === "cartpole") {
-      if (start === "upright") {
-        // slightly offset to require active catching
-        return { x: 0, xDot: 0, theta: 0.12 + (Math.random() - 0.5) * 0.05, thetaDot: 0 };
-      } else {
-        // complete downward hanging start
-        return { x: 0, xDot: 0, theta: Math.PI, thetaDot: 0 };
-      }
+  // Generates physical initial states
+  function getInitialState(start: "upright" | "swing_up"): CartPoleState {
+    if (start === "upright") {
+      // Slightly offset to require active stabilizer catching
+      return { x: 0, xDot: 0, theta: 0.12 + (Math.random() - 0.5) * 0.05, thetaDot: 0 };
     } else {
-      // Double Inverted Pendulum on a Cart
-      if (start === "upright") {
-        return { 
-          x: 0,
-          xDot: 0,
-          theta1: 0.08 + (Math.random() - 0.5) * 0.04, 
-          theta1Dot: 0, 
-          theta2: -0.05 + (Math.random() - 0.5) * 0.04, 
-          theta2Dot: 0 
-        };
-      } else {
-        return { x: 0, xDot: 0, theta1: Math.PI, theta1Dot: 0, theta2: Math.PI, theta2Dot: 0 };
-      }
+      // Starts dangling downwards requiring mechanical swing-up
+      return { x: 0, xDot: 0, theta: Math.PI + (Math.random() - 0.5) * 0.1, thetaDot: 0 };
     }
   }
 
-  // Visual Perturbation (pushing gravity simulation with mouse winds)
-  const applyManualWindPush = (force: number) => {
-    const limitForce = Math.max(-physicsParams.maxForce * 1.5, Math.min(physicsParams.maxForce * 1.5, force));
-    
-    if (envType === "cartpole") {
-      const cpState = stateRef.current as CartPoleState;
-      stateRef.current = {
-        x: cpState.x,
-        xDot: cpState.xDot + (limitForce / (physicsParams.cartMass || 1.2)) * 0.8,
-        theta: cpState.theta,
-        thetaDot: cpState.thetaDot + (limitForce / (physicsParams.pendulumMass || 0.2)) * 0.4,
-      };
-    } else {
-      const dpState = stateRef.current as DoublePendulumState;
-      stateRef.current = {
-        x: dpState.x !== undefined ? dpState.x : 0,
-        xDot: (dpState.xDot !== undefined ? dpState.xDot : 0) + (limitForce / (physicsParams.cartMass || 1.2)) * 0.8,
-        theta1: dpState.theta1,
-        theta1Dot: dpState.theta1Dot + (limitForce / (physicsParams.pendulumMass || 0.2)) * 0.4,
-        theta2: dpState.theta2,
-        theta2Dot: dpState.theta2Dot - (limitForce / (physicsParams.pendulumMass || 0.2)) * 0.3,
-      };
-    }
-    setState({ ...stateRef.current });
+  // Applied manually on clicked mouse offset triggers
+  const applyManualWindPush = (pushForce: number) => {
+    const updated = { ...stateRef.current };
+    updated.xDot += pushForce * 0.18; // Apply delta impulse
+    updated.thetaDot += pushForce / (physicsParams.pendulumMass * 10);
+    stateRef.current = updated;
+    setState(updated);
   };
 
   // High-frequency simulation execution tick
@@ -372,7 +310,6 @@ export default function App() {
 
     const ticker = setInterval(() => {
       const currentAgent = agentRef.current;
-      const currentPid = pidRef.current;
       if (!currentAgent) return;
 
       // Unpack states and modes, using refs for precise non-stale updates
@@ -383,49 +320,30 @@ export default function App() {
       let tempStreak = streakRefForLoop.current;
       let tempMaxStreak = maxStreak;
 
-      // We run 'stepsCount' calculations per frame (enabling instant fast-forward training!)
+      // We run 'stepsCount' calculations per frame (enabling fast-forward training updates!)
       for (let i = 0; i < stepsCount; i++) {
         let controlAction = 0; // force/torque intensity
         let chosenActionIdx: ActionIndex = 1; // discrete representation
 
         const stateIndex = currentAgent.getStateIndex(tempState);
 
-        // Determine control actions: Q-agent, PID formulas, or completely idle gravity
+        // Determine control actions: Q-agent, or user-driven gravity drift
         if (controllerType === "rl") {
           // Exploit optimal actions only when not training!
           chosenActionIdx = currentAgent.selectAction(stateIndex, !isTraining);
-          // Mapping index to continuous torque (-Max, 0, +Max)
           controlAction = ACTIONS[chosenActionIdx] * physicsParams.maxForce;
-        } else if (controllerType === "pid" && currentPid) {
-          if (envType === "cartpole") {
-            controlAction = currentPid.computeTorque(tempState as CartPoleState, dt, physicsParams.maxForce);
-          } else {
-            controlAction = currentPid.computeDoublePendulumForce(tempState as DoublePendulumState, dt, physicsParams.maxForce);
-          }
         }
 
-        // Apply physical changes
-        let nextState: any;
-        let reward = 0;
-
-        if (envType === "cartpole") {
-          const cpState = tempState as CartPoleState;
-          nextState = stepCartPole(cpState, controlAction, physicsParams, dt);
-          reward = getCartPoleReward(nextState, controlAction, rlParams.rewardType, physicsParams.maxForce);
-        } else {
-          const dpState = tempState as DoublePendulumState;
-          nextState = stepDoublePendulum(dpState, controlAction, physicsParams, dt);
-          reward = getDoublePendulumReward(nextState, controlAction, rlParams.rewardType, physicsParams.maxForce);
-        }
+        // Apply physical dynamics
+        let nextState = stepCartPole(tempState, controlAction, physicsParams, dt);
+        let reward = getCartPoleReward(nextState, controlAction, rlParams.rewardType, physicsParams.maxForce);
 
         // Evaluation metrics accumulation
         tempRewardAccum += reward;
         tempStepsAccum++;
 
-        // Upright Angle stability assessment streak (strictly checking both outer & inner links)
-        const isStableCheck = envType === "cartpole"
-          ? Math.abs(normalizeAngle((nextState as CartPoleState).theta)) < 0.15
-          : Math.abs(normalizeAngle((nextState as DoublePendulumState).theta1)) < 0.15 && Math.abs(normalizeAngle((nextState as DoublePendulumState).theta2)) < 0.22;
+        // Upright Angle stability assessment streak
+        const isStableCheck = Math.abs(normalizeAngle(nextState.theta)) < 0.15;
 
         if (isStableCheck) {
           tempStreak++;
@@ -433,20 +351,18 @@ export default function App() {
           tempStreak = 0;
         }
 
-        // Check fail thresholds or episode expiration heights (no early reset when falling - complete full length!)
         let terminal = false;
         if (tempStepsAccum >= maxEpisodeSteps) {
           terminal = true;
         }
 
-        // Q-Table optimization weight update on active step environment transitions
+        // Q-Table optimization weight update on active step state transitions
         if (controllerType === "rl" && isTraining) {
           const nextStateIndex = currentAgent.getStateIndex(nextState);
           
           if (rlParams.algorithm === "q_learning") {
             currentAgent.updateValue(stateIndex, chosenActionIdx, reward, nextStateIndex);
           } else {
-            // SARSA requires the action chosen in the next state as well
             const nextActionIdx = currentAgent.selectAction(nextStateIndex, false);
             currentAgent.updateValue(stateIndex, chosenActionIdx, reward, nextStateIndex, nextActionIdx);
           }
@@ -457,7 +373,6 @@ export default function App() {
 
         // Episode reset conditions handler
         if (terminal) {
-          // Save episode analytics to history logs
           const isStable = tempStreak > (maxEpisodeSteps * 0.75); // stable for 75%+ of session duration
           
           const newLog: EpisodeLog = {
@@ -480,13 +395,10 @@ export default function App() {
           }
 
           // Restart to physics base defaults
-          tempState = getInitialState(envType, startType);
+          tempState = getInitialState(startType);
           tempRewardAccum = 0;
           tempStepsAccum = 0;
           tempStreak = 0;
-          
-          // Clear active integral Windup in class controller
-          if (currentPid) currentPid.reset();
         }
       }
 
@@ -511,23 +423,13 @@ export default function App() {
         const index = currentAgent.getStateIndex(tempState);
         const bestAction = currentAgent.selectAction(index, true); // exploit
         totalForceApplied = ACTIONS[bestAction] * physicsParams.maxForce;
-      } else if (controllerType === "pid" && currentPid) {
-        if (envType === "cartpole") {
-          totalForceApplied = currentPid.computeTorque(tempState as CartPoleState, dt, physicsParams.maxForce);
-        } else {
-          totalForceApplied = currentPid.computeDoublePendulumForce(tempState as DoublePendulumState, dt, physicsParams.maxForce);
-        }
       }
       setActiveForce(totalForceApplied);
 
       // Orbital Phase space trailing tracker (keeps last 75 points for visual simplicity)
       setPhaseSpaceTrail((prev) => {
-        const tVal = envType === "cartpole" 
-          ? (tempState as CartPoleState).theta 
-          : (tempState as DoublePendulumState).theta1;
-        const tDotVal = envType === "cartpole" 
-          ? (tempState as CartPoleState).thetaDot 
-          : (tempState as DoublePendulumState).theta1Dot;
+        const tVal = tempState.theta;
+        const tDotVal = tempState.thetaDot;
         const updated = [...prev, { theta: normalizeAngle(tVal), thetaDot: tDotVal }];
         if (updated.length > 75) updated.shift();
         return updated;
@@ -537,7 +439,7 @@ export default function App() {
 
     return () => clearInterval(ticker);
 
-  }, [isPlaying, isTraining, trainingSpeed, envType, controllerType, rlParams.rewardType, rlParams.algorithm, startType, maxStreak, physicsParams, maxEpisodeSteps]);
+  }, [isPlaying, isTraining, trainingSpeed, controllerType, rlParams.rewardType, rlParams.algorithm, startType, maxStreak, physicsParams, maxEpisodeSteps]);
 
   // Visual success rates computations
   const successRate = useMemo(() => {
@@ -558,9 +460,6 @@ export default function App() {
     if (agentRef.current) {
       agentRef.current.resetQTable();
     }
-    if (pidRef.current) {
-      pidRef.current.reset();
-    }
     episodeLogsRef.current = [];
     setEpisodeLogs([]);
     curEpisodeRewardRef.current = 0;
@@ -578,7 +477,7 @@ export default function App() {
       agentRef.current.updateParams({ epsilon: 1.0 });
     }
 
-    const resetState = getInitialState(envType, startType);
+    const resetState = getInitialState(startType);
     stateRef.current = resetState;
     setState(resetState);
   };
@@ -595,23 +494,23 @@ export default function App() {
           <div>
             <h1 className="text-sm md:text-md font-bold tracking-tight text-white flex items-center gap-2">
               <span>Neural Dynamics & Control Arena</span>
-              <span className="text-sky-400 font-mono tracking-widest text-xs">v2.4.0</span>
+              <span className="text-sky-400 font-mono tracking-widest text-xs">v3.0.0</span>
             </h1>
-            <p className="text-[9px] uppercase tracking-widest text-slate-500">Neural Network Dynamics Engine</p>
+            <p className="text-[9px] uppercase tracking-widest text-slate-500">Reinforcement Learning Stabilizer Sandbox</p>
           </div>
         </div>
 
         {/* Dynamic Header Metrics */}
-        <div className="flex gap-6 md:gap-10 text-[10px] font-mono leading-none">
+        <div className="hidden sm:flex gap-6 md:gap-10 text-[10px] font-mono leading-none">
           <div className="flex flex-col items-start gap-1">
             <span className="text-slate-600 uppercase text-[8px] tracking-wider">STATUS</span>
-            <span className={isTraining ? "text-orange-400 animate-pulse" : "text-sky-450"}>
+            <span className={isTraining ? "text-orange-400 animate-pulse" : "text-sky-400"}>
               {isTraining ? "TRAINING_ACTIVE" : "STABILITY_HELD"}
             </span>
           </div>
           <div className="flex flex-col items-start gap-1">
             <span className="text-slate-600 uppercase text-[8px] tracking-wider">LATENCY</span>
-            <span className="text-white">0.31ms</span>
+            <span className="text-white">0.24ms</span>
           </div>
           <div className="flex flex-col items-start gap-1">
             <span className="text-slate-600 uppercase text-[8px] tracking-wider">ACTIVE_EPISODE</span>
@@ -623,33 +522,16 @@ export default function App() {
       {/* Main Content Dashboard Frame */}
       <main className="flex-1 max-w-[1366px] mx-auto w-full p-4 md:p-6 space-y-6 overflow-y-auto">
         
-        {/* Dynamic Environment Switcher Header Section */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#0a0c12] border border-slate-800/60 p-3 px-5 rounded-lg shadow-xl shrink-0">
+        {/* Focused Environment Header Section */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#0a0c12] border border-slate-800/60 p-3.5 px-5 rounded-lg shadow-xl shrink-0">
           <div>
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-sans">Environmental Physical Arena Switcher</h2>
-            <p className="text-[10px] text-slate-500 mt-0.5 font-sans font-mono uppercase tracking-wider">Phase-space of non-linear pole angles and dynamic stability regimes</p>
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-sans">Inverted Pendulum Balancer</h2>
+            <p className="text-[10px] text-slate-500 mt-0.5 font-sans uppercase tracking-wider">Train a tabular Q-learning AI agent in real-time or background offline boost to maintain vertical stability</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setEnvType("cartpole")}
-              className={`p-2 px-6 text-xs font-bold rounded tracking-widest transition-all cursor-pointer border ${
-                envType === "cartpole"
-                  ? "bg-sky-550 border-sky-450 text-white shadow-[0_0_15px_rgba(2,132,199,0.35)]"
-                  : "bg-transparent border-slate-800 text-slate-400 hover:text-white"
-              }`}
-            >
-              Cart-Pole Inverted Pendulum
-            </button>
-            <button
-              onClick={() => setEnvType("double_pendulum")}
-              className={`p-2 px-6 text-xs font-bold rounded tracking-widest transition-all cursor-pointer border ${
-                envType === "double_pendulum"
-                  ? "bg-sky-550 border-sky-450 text-white shadow-[0_0_15px_rgba(2,132,199,0.35)]"
-                  : "bg-transparent border-slate-800 text-slate-400 hover:text-white"
-              }`}
-            >
-              Double Joint Inverted Pendulum
-            </button>
+            <span className="bg-[#0e2238] border border-sky-800 text-[9px] text-[#38bdf8] p-1 px-3.5 rounded font-mono uppercase font-bold tracking-wider">
+              Cart-Pole Dynamics Active
+            </span>
           </div>
         </div>
 
@@ -663,10 +545,8 @@ export default function App() {
             <div className="bg-[#0a0c12] border border-slate-800/85 rounded-lg p-4 md:p-5 relative shadow-2xl flex flex-col gap-4">
               
               {/* PLAYBACK & STEPS CONTROL STATE */}
-              {/* Playback Control Actions Row */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/50 pb-4">
                 
-                {/* Micro operational actions */}
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsPlaying(!isPlaying)}
@@ -679,12 +559,12 @@ export default function App() {
                     {isPlaying ? (
                       <>
                         <Pause className="w-3.5 h-3.5" />
-                        <span>Pause Tracking [ PAUSE ]</span>
+                        <span>Pause [ PAUSE ]</span>
                       </>
                     ) : (
                       <>
                         <Play className="w-3.5 h-3.5" />
-                        <span>Resume Simulation [ PLAY ]</span>
+                        <span>Play [ PLAY ]</span>
                       </>
                     )}
                   </button>
@@ -696,7 +576,7 @@ export default function App() {
                         setIsTraining(nextTraining);
                         if (nextTraining) {
                           setStartType("swing_up");
-                          const sDown = getInitialState(envType, "swing_up");
+                          const sDown = getInitialState("swing_up");
                           setState(sDown);
                           stateRef.current = sDown;
                           curEpisodeRewardRef.current = 0;
@@ -711,23 +591,23 @@ export default function App() {
                       }`}
                     >
                       <Zap className="w-3.5 h-3.5" />
-                      <span>{isTraining ? "Pause Training Loop" : "Engage RL Training Loop (Train)"}</span>
+                      <span>{isTraining ? "Pause Training Loop" : "Engage RL Training"}</span>
                     </button>
                   )}
 
                   <button
                     onClick={resetAllStatsAndAgent}
-                    className="p-2 bg-[#050608] hover:bg-slate-900 border border-slate-800 rounded text-slate-400 transition-all cursor-pointer flex items-center justify-center h-8 w-8"
+                    className="p-2 bg-[#050608] hover:bg-slate-905 border border-slate-800 rounded text-slate-400 transition-all cursor-pointer flex items-center justify-center h-8 w-8"
                     title="Soft Reset Q-values and Episode logs"
                   >
-                    <RotateCcw className="w-4 h-4 text-sky-550" />
+                    <RotateCcw className="w-4 h-4 text-sky-400" />
                   </button>
                 </div>
 
                 {/* Controller Selection Mode Badge tabs */}
                 <div className="flex items-center gap-1 bg-[#050608] p-1 rounded border border-slate-800">
-                  <span className="text-[9px] text-slate-500 px-2 uppercase font-mono">MODE:</span>
-                  {(["rl", "pid", "manual"] as const).map((type) => (
+                  <span className="text-[9px] text-slate-500 px-2 uppercase font-mono">ACTIVE CONTROLLER:</span>
+                  {(["rl", "manual"] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => {
@@ -736,15 +616,23 @@ export default function App() {
                           setIsTraining(false);
                         }
                       }}
-                      className={`p-1 px-3 text-[10px] font-bold tracking-widest rounded transition-all uppercase cursor-pointer ${
+                      className={`p-1 px-3 text-[10px] font-bold tracking-widest rounded transition-all uppercase cursor-pointer flex items-center gap-1 ${
                         controllerType === type
                           ? "bg-[#0c101a] text-sky-400 border border-sky-500/20 shadow-sm"
-                          : "text-slate-505 hover:text-slate-350"
+                          : "text-slate-500 hover:text-slate-300"
                       }`}
                     >
-                      {type === "rl" && "AI agent (RL)"}
-                      {type === "pid" && "PID controller"}
-                      {type === "manual" && "Manual perturber"}
+                      {type === "rl" ? (
+                        <>
+                          <Cpu className="w-3 h-3" />
+                          <span>AI agent (RL)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Keyboard className="w-3 h-3" />
+                          <span>Manual (Keyboard keys)</span>
+                        </>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -752,14 +640,13 @@ export default function App() {
               </div>
 
               {boostMessage && (
-                <div className="bg-sky-950/70 border border-sky-500/30 p-2.5 rounded text-[10.5px] text-sky-450 font-bold font-sans text-center animate-pulse tracking-wide transition-all">
+                <div className="bg-sky-950/70 border border-sky-500/30 p-2.5 rounded text-[10.5px] text-sky-400 font-bold font-sans text-center animate-pulse tracking-wide transition-all">
                   ⚡ {boostMessage}
                 </div>
               )}
 
               {/* Central Dynamic Viewport Component */}
               <SimulationCanvas
-                envType={envType}
                 state={state}
                 physicsParams={physicsParams}
                 appliedForce={activeForce}
@@ -789,7 +676,7 @@ export default function App() {
                 </div>
                 <div>
                   <span className="text-[8px] text-slate-600 block tracking-wider uppercase">EXPLORATION_DEP (ε)</span>
-                  <span className="text-orange-400 font-bold block mt-0.5 text-xs">
+                  <span className="text-orange-450 font-bold block mt-0.5 text-xs">
                     {(rlParams.epsilon * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -799,7 +686,6 @@ export default function App() {
 
             {/* LIVE DIAGNOSTICS & HEATMAP RENDER */}
             <AnalyticsPanel
-              envType={envType}
               episodeLogs={episodeLogs}
               state={state}
               agent={agent}
@@ -819,7 +705,7 @@ export default function App() {
                 {/* RL Parameters Configurations Panel */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-400">1. REINFORCEMENT LEARNING (RL) AGENT</span>
+                    <span className="text-xs font-bold text-sky-400 uppercase">1. Agent Learning Hyperparameters</span>
                     <span className="bg-[#050608] border border-slate-800 text-[9px] text-sky-400 p-1 px-2 rounded-full font-mono uppercase">
                       {rlParams.algorithm}
                     </span>
@@ -834,8 +720,8 @@ export default function App() {
                           onClick={() => setRlParams(prev => ({ ...prev, algorithm: "q_learning" }))}
                           className={`p-1.5 text-[10px] font-bold rounded cursor-pointer border transition-all ${
                             rlParams.algorithm === "q_learning" 
-                              ? "bg-[#0c101a] border-sky-500/30 text-sky-450" 
-                              : "bg-[#050608] border-slate-900 text-slate-500"
+                              ? "bg-[#0c101a] border-sky-500/30 text-sky-400" 
+                              : "bg-[#050608] border-slate-900 text-slate-505"
                           }`}
                         >
                           Q-Learning (Off-policy)
@@ -844,8 +730,8 @@ export default function App() {
                           onClick={() => setRlParams(prev => ({ ...prev, algorithm: "sarsa" }))}
                           className={`p-1.5 text-[10px] font-bold rounded cursor-pointer border transition-all ${
                             rlParams.algorithm === "sarsa" 
-                              ? "bg-[#0c101a] border-sky-500/30 text-sky-450" 
-                              : "bg-[#050608] border-slate-900 text-slate-500"
+                              ? "bg-[#0c101a] border-sky-500/30 text-sky-400" 
+                              : "bg-[#050608] border-slate-900 text-slate-505"
                           }`}
                         >
                           SARSA (On-policy)
@@ -856,7 +742,7 @@ export default function App() {
                     {/* Learning rate alpha */}
                     <div>
                       <div className="flex justify-between text-[11px] font-mono text-slate-400 mb-1">
-                        <span>Learning Rate (α):</span>
+                        <span>Base Learning Rate (α):</span>
                         <span className="text-sky-400 font-bold">{rlParams.learningRate}</span>
                       </div>
                       <input
@@ -889,7 +775,7 @@ export default function App() {
 
                     {/* Reward shaping function type */}
                     <div>
-                      <span className="text-[10px] text-slate-500 block mb-1">Reward Design Strategy (Shaping):</span>
+                      <span className="text-[10px] text-slate-500 block mb-1">Reward Design Strategy:</span>
                       <select
                         value={rlParams.rewardType}
                         onChange={(e: any) => setRlParams((prev) => ({ ...prev, rewardType: e.target.value }))}
@@ -905,110 +791,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Classical Controller PID Configuration Gains */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-400">2. CLASSICAL PID GAIN CONSTANTS</span>
-                    <span className="bg-[#050608] border border-slate-800 text-[10px] text-[#0284c7] p-1 px-2 rounded-full font-mono uppercase whitespace-nowrap">
-                      P / I / D
-                    </span>
-                  </div>
-
-                  <div className="space-y-3 font-sans">
-                    {/* Proportional Gain */}
-                    <div>
-                      <div className="flex justify-between text-[11px] font-mono text-slate-400 mb-1">
-                        <span>Proportional Gain (Kp):</span>
-                        <span className="text-sky-400 font-bold">{pidParams.Kp}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="5.0"
-                        max="100.0"
-                        step="2.0"
-                        value={pidParams.Kp}
-                        onChange={(e) => setPidParams((prev) => ({ ...prev, Kp: parseFloat(e.target.value) }))}
-                        className="w-full h-1 bg-[#050608] rounded-lg appearance-none cursor-pointer accent-sky-500"
-                      />
-                    </div>
-
-                    {/* Integral Gain */}
-                    <div>
-                      <div className="flex justify-between text-[11px] font-mono text-slate-400 mb-1">
-                        <span>Integral Gain (Ki):</span>
-                        <span className="text-sky-400 font-bold">{pidParams.Ki}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="10.0"
-                        step="0.1"
-                        value={pidParams.Ki}
-                        onChange={(e) => setPidParams((prev) => ({ ...prev, Ki: parseFloat(e.target.value) }))}
-                        className="w-full h-1 bg-[#050608] rounded-lg appearance-none cursor-pointer accent-sky-500"
-                      />
-                    </div>
-
-                    {/* Derivative Gain */}
-                    <div>
-                      <div className="flex justify-between text-[11px] font-mono text-slate-400 mb-1">
-                        <span>Derivative Gain (Kd):</span>
-                        <span className="text-sky-400 font-bold">{pidParams.Kd}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="30.0"
-                        step="0.5"
-                        value={pidParams.Kd}
-                        onChange={(e) => setPidParams((prev) => ({ ...prev, Kd: parseFloat(e.target.value) }))}
-                        className="w-full h-1 bg-[#050608] rounded-lg appearance-none cursor-pointer accent-sky-500"
-                      />
-                    </div>
-
-                    {/* Auto-tune parameters button */}
-                    <button
-                      onClick={handleAutoTunePID}
-                      className="w-full p-2 mt-1 bg-sky-950/40 border border-sky-800/40 hover:bg-sky-950/80 hover:border-sky-500/50 text-sky-400 font-mono text-[10px] rounded uppercase font-bold tracking-wider cursor-pointer duration-200 transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <Zap className="w-3.5 h-3.5 text-sky-400 fill-sky-400/20" />
-                      <span>Auto-Tune Optimal Gains</span>
-                    </button>
-
-                    {/* Balance scenario switch */}
-                    <div>
-                      <span className="text-[10px] text-slate-500 block mb-1">Physics Start Condition:</span>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => setStartType("upright")}
-                          className={`p-1.5 text-[10px] font-bold rounded cursor-pointer border transition-all ${
-                            startType === "upright" 
-                              ? "bg-[#0c101a] border-sky-500/30 text-sky-450" 
-                              : "bg-[#050608] border-slate-900 text-slate-500"
-                          }`}
-                        >
-                          Catch Zone (Upright)
-                        </button>
-                        <button
-                          onClick={() => setStartType("swing_up")}
-                          className={`p-1.5 text-[10px] font-bold rounded cursor-pointer border transition-all ${
-                            startType === "swing_up" 
-                              ? "bg-[#0c101a] border-sky-500/30 text-sky-450" 
-                              : "bg-[#050608] border-slate-900 text-slate-500"
-                          }`}
-                        >
-                          Hanging Setup (Swing-up)
-                        </button>
-                      </div>
-                    </div>
-
-                  </div>
-                </div>
-
                 {/* Physics Constants Slider Values */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-400">3. NEWTONIAN PHYSICS MODEL PARAMETERS</span>
+                    <span className="text-xs font-bold text-sky-400 uppercase">2. Newtonian Physics Constants</span>
                     <span className="bg-[#050608] border border-slate-800 text-[9px] text-[#0284c7] p-1 px-2 rounded-full font-mono uppercase">
                       Dynamics
                     </span>
@@ -1049,16 +835,55 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Simulation Training Fast Forward Speed */}
-                    {controllerType === "rl" && (
-                      <div className="p-3 bg-sky-950/20 rounded border border-sky-500/20 mt-2 space-y-3.5">
+                    {/* Balance scenario switch */}
+                    <div>
+                      <span className="text-[10px] text-slate-500 block mb-1">Physics Start Condition:</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => setStartType("upright")}
+                          className={`p-1.5 text-[10px] font-bold rounded cursor-pointer border transition-all ${
+                            startType === "upright" 
+                              ? "bg-[#0c101a] border-sky-500/30 text-sky-400" 
+                              : "bg-[#050608] border-slate-900 text-slate-505"
+                          }`}
+                        >
+                          Catch Zone (Upright)
+                        </button>
+                        <button
+                          onClick={() => setStartType("swing_up")}
+                          className={`p-1.5 text-[10px] font-bold rounded cursor-pointer border transition-all ${
+                            startType === "swing_up" 
+                              ? "bg-[#0c101a] border-sky-500/30 text-sky-400" 
+                              : "bg-[#050608] border-slate-900 text-slate-505"
+                          }`}
+                        >
+                          Hanging Setup (Swing-up)
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Simulation Training Fast Forward Speed */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-sky-400 uppercase">3. Real-Time & Offline Booster</span>
+                    <span className="bg-[#050608] border border-slate-800 text-[9px] text-[#0284c7] p-1 px-2 rounded-full font-mono uppercase">
+                      Booster
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 font-sans">
+                    {controllerType === "rl" ? (
+                      <div className="p-3 bg-sky-950/20 rounded border border-sky-500/20 space-y-3.5">
                         <div>
                           <div className="flex justify-between text-[10px] font-mono text-slate-400 mb-1 font-bold">
                             <span className="flex items-center gap-1">
                               <Flame className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
-                              <span>Fast Training Acceleration:</span>
+                              <span>Real-Time Speed multiplier:</span>
                             </span>
-                            <span className="text-orange-400 font-bold">{trainingSpeed}x</span>
+                            <span className="text-orange-450 font-bold">{trainingSpeed}x</span>
                           </div>
                           <input
                             type="range"
@@ -1067,10 +892,10 @@ export default function App() {
                             step="1"
                             value={trainingSpeed}
                             onChange={(e) => setTrainingSpeed(parseInt(e.target.value))}
-                            className="w-full accent-orange-550 cursor-pointer"
+                            className="w-full accent-orange-500 cursor-pointer"
                           />
                           <span className="text-[9px] text-slate-500 block text-right mt-1 font-sans">
-                            Raise limits up to 100x updates per animation frame.
+                            Run up to 100 updates per frame.
                           </span>
                         </div>
 
@@ -1081,24 +906,32 @@ export default function App() {
                             disabled={isBoosting}
                             className={`w-full p-2.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 border cursor-pointer ${
                               isBoosting
-                                ? "bg-orange-800 border-orange-700/50 text-orange-300 animate-pulse cursor-wait"
-                                : "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white border-orange-500 shadow-md hover:shadow-orange-500/20"
+                                ? "bg-orange-850 border-orange-700/50 text-orange-300 animate-pulse cursor-wait"
+                                : "bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white border-orange-550 shadow-md hover:shadow-orange-500/20"
                             }`}
                           >
                             <Zap className="w-3.5 h-3.5 animate-bounce fill-current" />
                             <span>
                               {isBoosting 
-                                ? "در حال پختن مدل (آموزش پس‌زمینه)..." 
-                                : "آموزش آنی ۱۲۰,۰۰۰ گام پس‌زمینه (Instant Boost)"}
+                                ? "Simulating Background Loop..." 
+                                : "Instant RL Training Boost"}
                             </span>
                           </button>
                           <span className="text-[9.5px] text-slate-500 block text-right mt-1.5 font-sans leading-normal">
-                            اجرای مستقیم ۱۲۰,۰۰۰ مرحله (معادل ۲۰۰ اپیزود) در صدم ثانیه جهت یادگیری فوری پاندول.
+                            Directly simulates 120,000 convergence steps in milliseconds and freezes Q-table to lock perfect stability.
                           </span>
                         </div>
                       </div>
+                    ) : (
+                      <div className="p-4 bg-[#050608] border border-slate-800 rounded text-center text-xs text-slate-500 font-mono">
+                        KEYBOARD INTERACTION ENABLED:
+                        <div className="mt-2 text-[10px] text-slate-400 space-y-1 text-left list-disc pl-2">
+                          <div>• Press <b>A</b> or <b>Left Arrow</b> to push the cart Left</div>
+                          <div>• Press <b>D</b> or <b>Right Arrow</b> to push the cart Right</div>
+                          <div>• Click anywhere on visual stage to apply horizontal wind gust gusts!</div>
+                        </div>
+                      </div>
                     )}
-
                   </div>
                 </div>
 
@@ -1122,7 +955,7 @@ export default function App() {
               {/* High tech stats detail layout */}
               <div className="grid grid-cols-2 gap-3.5 font-mono">
                 <div className="bg-[#050608] p-3 rounded border border-slate-800/80">
-                  <span className="text-[8px] text-slate-500 block uppercase tracking-wider">SAVED_EPISODES</span>
+                  <span className="text-[8px] text-slate-500 block uppercase tracking-wider">COMPLETED_RUNS</span>
                   <span className="text-md font-bold text-white block mt-1">
                     {episodeLogs.length}
                   </span>
@@ -1131,29 +964,29 @@ export default function App() {
                 <div className="bg-[#050608] p-3 rounded border border-slate-800/80">
                   <span className="text-[8px] text-slate-500 block uppercase tracking-wider">STABILITY_PROB</span>
                   <span className={`text-md font-bold block mt-1 ${
-                    successRate > 75 ? "text-sky-400" : successRate > 35 ? "text-orange-400" : "text-rose-450"
+                    successRate > 75 ? "text-sky-400" : successRate > 35 ? "text-orange-400" : "text-rose-500"
                   }`}>
                     {successRate}%
                   </span>
                 </div>
 
                 <div className="bg-[#050608] p-3 rounded border border-slate-800/80">
-                  <span className="text-[8px] text-slate-500 block uppercase tracking-wider">REWARD_CONVERGED_AVG</span>
+                  <span className="text-[8px] text-slate-500 block uppercase tracking-wider">METRIC_AVERAGE</span>
                   <span className="text-sky-400 text-sm font-bold block mt-1 font-mono">
                     {avgReward}
                   </span>
                 </div>
 
                 <div className="bg-[#050608] p-3 rounded border border-slate-800/80">
-                  <span className="text-[8px] text-slate-500 block uppercase tracking-wider">EXPLORED_CELLS_QTY</span>
+                  <span className="text-[8px] text-slate-500 block uppercase tracking-wider">EXPLORED_NODES</span>
                   <span className="text-orange-450 text-xs font-bold block mt-1">
-                    {agent ? agent.getExploredStatesCount() : 0} NODES
+                    {agent ? agent.getExploredStatesCount() : 0} CELLS
                   </span>
                 </div>
               </div>
 
               <div className="mt-4 p-3 bg-sky-950/10 rounded text-[11px] text-slate-400 leading-relaxed font-sans border border-sky-500/10">
-                ⚡ <strong>Neural Stability Engine:</strong> Model-free Q-Learning maps non-linear coordinates via continuous state discretizations, updating the Bellman solver step-by-step to maintain a vertical target position.
+                ⚡ <b>Reinforcement Learning:</b> Model-free tabular Q-Learning computes and saves state-actions on discrete grids, updating convergence dynamically based on a Bellman solver. Once high scores are achieved, Q-Table is auto-frozen for maximum reliability.
               </div>
             </div>
 
@@ -1167,15 +1000,15 @@ export default function App() {
       <footer className="h-7 bg-sky-600 text-white flex items-center justify-between px-6 text-[9px] font-bold uppercase tracking-widest mt-auto shrink-0 select-none font-mono">
         <div className="flex gap-6">
           <span>HOST: GPU_ACCELERATED</span>
-          <span>CUDA CONTROLLER STATE: STABLE_SYNCED</span>
-          <span>MEMORY_METRIC: 4.8GB / 16GB</span>
+          <span>CONTROLLER WORKSPACE: STABLE_SYNCED</span>
+          <span>MEMORY TOTAL: 4.8GB / 16GB</span>
         </div>
         <div className="flex gap-4 items-center">
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-slate-950 inline-block animate-pulse"></span>
-            CONNECTION: ENCRYPTED PEER PORT_3000
+            CONNECTION: SECURED ON PORT_3000
           </span>
-          <span>SESSION: ACTIVE</span>
+          <span>SESSION STATUS: COMPILED</span>
         </div>
       </footer>
 
