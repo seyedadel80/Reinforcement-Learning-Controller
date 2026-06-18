@@ -2,15 +2,18 @@ import { RLParams } from "./types";
 import { normalizeAngle } from "./simulator";
 
 // Discrete force actions mapping:
-// 0: Negative force (-MaxForce)
-// 1: No force (0)
-// 2: Positive force (+MaxForce)
-export const ACTIONS = [-1, 0, 1] as const;
-export type ActionIndex = 0 | 1 | 2;
+// 5 actions for much finer upright stabilizing control without wild limit cycles!
+// 0: Full Negative Force (-MaxForce)
+// 1: Mild Negative Force (-0.25 * MaxForce)
+// 2: No Force (0)
+// 3: Mild Positive Force (+0.25 * MaxForce)
+// 4: Full Positive Force (+MaxForce)
+export const ACTIONS = [-1.0, -0.25, 0.0, 0.25, 1.0] as const;
+export type ActionIndex = 0 | 1 | 2 | 3 | 4;
 
 export class RLAgent {
-  // tabular Q value storage: StateIndex -> number[3] (for 3 action values)
-  public qTable: Map<number, [number, number, number]>;
+  // tabular Q value storage: StateIndex -> number[] for flexible action counts
+  public qTable: Map<number, number[]>;
   private params: RLParams;
 
   // Track exploration vs exploitation counts
@@ -83,14 +86,10 @@ export class RLAgent {
   /**
    * Returns Q values array for a state, initializing if absent
    */
-  public getQValues(stateIndex: number): [number, number, number] {
+  public getQValues(stateIndex: number): number[] {
     if (!this.qTable.has(stateIndex)) {
       // Initialize with small random values to break symmetry
-      const initial: [number, number, number] = [
-        (Math.random() - 0.5) * 0.01,
-        (Math.random() - 0.5) * 0.01,
-        (Math.random() - 0.5) * 0.01
-      ];
+      const initial: number[] = Array.from({ length: ACTIONS.length }, () => (Math.random() - 0.5) * 0.01);
       this.qTable.set(stateIndex, initial);
     }
     return this.qTable.get(stateIndex)!;
@@ -104,17 +103,17 @@ export class RLAgent {
     
     if (!forceExploit && Math.random() < this.params.epsilon) {
       this.exploreCount++;
-      // Return 0, 1 or 2 randomly
-      return Math.floor(Math.random() * 3) as ActionIndex;
+      // Return any random action index
+      return Math.floor(Math.random() * ACTIONS.length) as ActionIndex;
     } else {
       this.exploitCount++;
       // Argmax across action options
       let maxVal = -Infinity;
-      let argmax: ActionIndex = 1; // Default to stay (no force)
+      let argmax: ActionIndex = 2; // Default to stay (no force, index 2)
       
       // Tie breaking
       const bestActions: ActionIndex[] = [];
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < ACTIONS.length; i++) {
         const q = qValues[i];
         if (q > maxVal) {
           maxVal = q;

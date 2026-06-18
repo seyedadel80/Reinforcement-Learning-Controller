@@ -41,6 +41,13 @@ export interface EpisodeLog {
   isStable: boolean; // Did it maintain stability for most of the episode?
 }
 
+export interface PIDParams {
+  kpAngle: number;
+  kdAngle: number;
+  kpPosition: number;
+  kdPosition: number;
+}
+
 export type RewardWeightOptions = {
   angle: number;
   velocity: number;

@@ -101,27 +101,39 @@ export function getCartPoleReward(
 
   switch (rewardType) {
     case "quadratic":
-      // Penalize: angle deviation, velocity, cart displacement and action effort
-      return -(
-        Math.pow(thetaNorm, 2) * 5.0 + 
-        Math.pow(state.thetaDot, 2) * 0.1 + 
-        Math.pow(x, 2) * 0.8 + 
-        Math.pow(state.xDot, 2) * 0.05 +
-        Math.pow(force / maxForce, 2) * 0.02
-      );
+      // Clean positive-biased reward: base positive reward for staying upright, minus deviations
+      const angleCost = Math.pow(thetaNorm, 2) * 5.0;
+      const speedCost = Math.pow(state.thetaDot, 2) * 0.05;
+      const positionCost = Math.pow(x, 2) * 0.3;
+      const effortCost = Math.pow(force / maxForce, 2) * 0.01;
+      
+      // If angle is reasonably close to upright, give a nice positive base reward minus quadratic penalties
+      if (Math.abs(thetaNorm) < 0.8) {
+        let rewardVal = 3.0 - (angleCost + speedCost + positionCost + effortCost);
+        
+        // High-precision vertical stability bonus to draw the pole to absolute center
+        if (Math.abs(thetaNorm) < 0.08) {
+          rewardVal += 10.0; // massive bonus for keeping it within 4.5 degrees!
+        } else if (Math.abs(thetaNorm) < 0.16) {
+          rewardVal += 4.0;  // warning-free zones
+        }
+        
+        return Math.max(-1.0, rewardVal);
+      }
+      return -1.0;
       
     case "cos_height":
-      // Higher reward when cart is centered and pole is upright (cos(0) = 1)
-      const heightCost = Math.cos(thetaNorm) - 1.0;
-      const xCost = -0.2 * Math.pow(x, 2);
-      return heightCost + xCost - 0.02 * Math.pow(state.thetaDot, 2);
+      // Higher positive reward when cart is centered and pole is upright (cos(0) = 1)
+      const heightReward = Math.cos(thetaNorm) + 1.0; // range [0, 2.0]
+      const xCentering = -0.12 * Math.pow(x, 2);
+      return Math.max(-1.0, heightReward + xCentering - 0.01 * Math.pow(state.thetaDot, 2));
       
     case "energy_based":
-      // High reward when both cart is centered (|x| < 0.5) and pole is upright (|theta| < 0.2)
-      if (Math.abs(thetaNorm) < 0.20 && Math.abs(x) < 0.6) {
-        return 6.0 - (Math.pow(thetaNorm, 2) * 15.0 + Math.pow(x, 2) * 2.0 + Math.pow(state.thetaDot, 2) * 0.2);
+      // High reward when both cart is centered (|x| < 0.6) and pole is upright (|theta| < 0.2)
+      if (Math.abs(thetaNorm) < 0.25 && Math.abs(x) < 0.8) {
+        return 5.0 - (Math.pow(thetaNorm, 2) * 12.0 + Math.pow(x, 2) * 1.5 + Math.pow(state.thetaDot, 2) * 0.1);
       } else {
-        return -(Math.pow(thetaNorm, 2) * 2.0 + Math.pow(x, 2) * 0.5);
+        return Math.max(-2.0, Math.cos(thetaNorm) - 0.15 * Math.pow(x, 2));
       }
       
     case "sparse":
@@ -129,6 +141,6 @@ export function getCartPoleReward(
       // Binary success matching pole upright and cart within track limits
       const isUpright = Math.abs(thetaNorm) < 0.18;
       const isCentered = Math.abs(x) < 1.0;
-      return (isUpright && isCentered) ? 1.5 : -0.15;
+      return (isUpright && isCentered) ? 2.5 : -0.2;
   }
 }

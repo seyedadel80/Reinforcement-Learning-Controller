@@ -93,34 +93,42 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     const scale = (width - 60) / (2 * trackLimit);
     const cx = width / 2;
     const trackY = height / 2 + 50;
-    const rLength = 110; // rod rendering length
+    const rLength = 125; // elegant longer rod rendering length
 
-    // Draw horizontal track line
+    // Draw horizontal track line - a gorgeous glowing mint-green/neon-amber control rail
     ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(cx - trackLimit * scale, trackY + 12);
     ctx.lineTo(cx + trackLimit * scale, trackY + 12);
     ctx.stroke();
 
-    // Draw track end stops
-    ctx.fillStyle = "#475569";
-    ctx.fillRect(cx - trackLimit * scale - 4, trackY - 2, 8, 24);
-    ctx.fillRect(cx + trackLimit * scale - 4, trackY - 2, 8, 24);
+    // Glowing track overlay
+    ctx.strokeStyle = "rgba(16, 185, 129, 0.2)"; // subtle mint green glow
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - trackLimit * scale, trackY + 12);
+    ctx.lineTo(cx + trackLimit * scale, trackY + 12);
+    ctx.stroke();
+
+    // Draw track end stops (hard red warning bumpers)
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(cx - trackLimit * scale - 4, trackY, 8, 24);
+    ctx.fillRect(cx + trackLimit * scale - 4, trackY, 8, 24);
 
     // Cart coordinates
     const cartX = cx + currentX * scale;
-    const cartW = 84;
-    const cartH = 34;
+    const cartW = 75; // Sleeker, more proportionate cart width
+    const cartH = 26; // Sleeker, more proportionate cart height
     const cartY = trackY - cartH / 2;
 
-    // Draw the cart (wheeled box)
-    ctx.fillStyle = "#0d1527";
-    ctx.strokeStyle = "#0284c7"; // Saturation highlighted blue
+    // Draw the cart (wheeled box with Slate-Grey body and a subtle purple/teal aesthetic glow)
+    ctx.fillStyle = "#1e1b4b"; // Deep Indigo core
+    ctx.strokeStyle = "#6366f1"; // Indigo outline
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     if (typeof ctx.roundRect === "function") {
-      ctx.roundRect(cartX - cartW / 2, cartY, cartW, cartH, 6);
+      ctx.roundRect(cartX - cartW / 2, cartY, cartW, cartH, 4);
     } else {
       ctx.rect(cartX - cartW / 2, cartY, cartW, cartH);
     }
@@ -128,25 +136,36 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     ctx.stroke();
 
     // Draw wheels underneath cart
-    const wheelR = 8;
-    const wheelY = trackY + 12;
-    const wheelOffset = 24;
+    const wheelR = 8.5; // beautifully sized wheels
+    const wheelY = trackY + 11;
+    const wheelOffset = 22;
 
-    ctx.fillStyle = "#0284c7";
-    ctx.strokeStyle = "#38bdf8"; // cyan light highlight
-    ctx.lineWidth = 1.5;
+    ctx.fillStyle = "#0f172a"; // dark steel tires
+    ctx.strokeStyle = "#10b981"; // mint green rim highlights for gorgeous color contrast
+    ctx.lineWidth = 2.0;
 
     // Left wheel
     ctx.beginPath();
     ctx.arc(cartX - wheelOffset, wheelY, wheelR, 0, 2 * Math.PI);
     ctx.fill();
     ctx.stroke();
+    // Inner hubcaps
+    ctx.beginPath();
+    ctx.arc(cartX - wheelOffset, wheelY, 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = "#10b981";
+    ctx.fill();
 
     // Right wheel
     ctx.beginPath();
     ctx.arc(cartX + wheelOffset, wheelY, wheelR, 0, 2 * Math.PI);
+    ctx.fillStyle = "#0f172a";
     ctx.fill();
     ctx.stroke();
+    // Inner hubcaps
+    ctx.beginPath();
+    ctx.arc(cartX + wheelOffset, wheelY, 2.5, 0, 2 * Math.PI);
+    ctx.fillStyle = "#10b981";
+    ctx.fill();
 
     // Pole base joint pivot on cart
     const pivotX = cartX;
@@ -156,60 +175,88 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     const tipX = pivotX + rLength * Math.sin(currentTheta);
     const tipY = pivotY - rLength * Math.cos(currentTheta);
 
-    // Radial base angle helper arc (highlights upright balance zone)
-    ctx.strokeStyle = "rgba(14, 165, 233, 0.15)";
-    ctx.lineWidth = 4;
+    // Dynamic warning angle fan (highlights upright balance zone with subtle yellow/orange background)
+    ctx.fillStyle = "rgba(245, 158, 11, 0.04)";
     ctx.beginPath();
-    ctx.arc(pivotX, pivotY, 35, -Math.PI / 2 - 0.2, -Math.PI / 2 + 0.2);
-    ctx.stroke();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.arc(pivotX, pivotY, rLength + 10, -Math.PI / 2 - 0.22, -Math.PI / 2 + 0.22);
+    ctx.closePath();
+    ctx.fill();
 
     // Draw pole line (glowing dynamic rod matching angle stability)
     const absAngle = Math.abs(normalizeAngle(currentTheta));
-    const inZone = absAngle < 0.18;
+    const inZone = absAngle < 0.15;
+    const inDangerZone = absAngle >= 0.75;
+    
     ctx.beginPath();
     ctx.moveTo(pivotX, pivotY);
     ctx.lineTo(tipX, tipY);
-    ctx.strokeStyle = inZone 
-      ? "#0284c7"  // Saturation Highlight Blue (Active)
-      : absAngle < 0.75 
-        ? "#f97316" // Orange if swing/recovering
-        : "#475569";  // Dark inactive slate
-    ctx.lineWidth = 5.5;
+    
+    // Aesthetic color transition: mint green if perfectly upright, warm golden-yellow if slightly leaning, and coral-red if failed/dangling
+    const poleGradient = ctx.createLinearGradient(pivotX, pivotY, tipX, tipY);
+    if (inZone) {
+      poleGradient.addColorStop(0, "#10b981"); // mint green
+      poleGradient.addColorStop(1, "#34d399");
+      ctx.strokeStyle = poleGradient;
+    } else if (!inDangerZone) {
+      poleGradient.addColorStop(0, "#f59e0b"); // warm golden-amber
+      poleGradient.addColorStop(1, "#fbbf24");
+      ctx.strokeStyle = poleGradient;
+    } else {
+      poleGradient.addColorStop(0, "#ef4444"); // warning coral red
+      poleGradient.addColorStop(1, "#f87171");
+      ctx.strokeStyle = poleGradient;
+    }
+    
+    ctx.lineWidth = 4.5; // balanced, more professional look
     ctx.lineCap = "round";
-    ctx.shadowColor = inZone ? "rgba(2, 132, 199, 0.7)" : "transparent";
-    ctx.shadowBlur = inZone ? 16 : 0;
+    ctx.shadowColor = inZone ? "rgba(16, 185, 129, 0.4)" : !inDangerZone ? "rgba(245, 158, 11, 0.2)" : "transparent";
+    ctx.shadowBlur = inZone ? 12 : !inDangerZone ? 6 : 0;
     ctx.stroke();
     ctx.shadowBlur = 0; // reset shadow
 
-    // Draw weight at end (Bob)
+    // Draw brass weight at end (Bob) with professional golden/bronze metallic finish
     ctx.beginPath();
-    ctx.arc(tipX, tipY, 18, 0, 2 * Math.PI);
-    ctx.fillStyle = inZone ? "#0284c7" : "#1e293b";
+    ctx.arc(tipX, tipY, 15, 0, 2 * Math.PI); // slightly sleeker bob
+    ctx.fillStyle = inZone ? "#10b981" : !inDangerZone ? "#d97706" : "#ef4444";
     ctx.fill();
-    ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Inner bronze core for realistic aesthetic depth
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 6, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+    ctx.fill();
+
+    // Pivot pin (metallic silver center)
+    ctx.beginPath();
+    ctx.arc(pivotX, pivotY, 5.5, 0, 2 * Math.PI);
+    ctx.fillStyle = "#94a3b8";
+    ctx.fill();
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Pivot pin
-    ctx.beginPath();
-    ctx.arc(pivotX, pivotY, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = "#38bdf8";
-    ctx.fill();
-
-    // Show angle and position readouts
+    // Show angle and position readouts in high-contrast monospaced display
     ctx.font = "11px JetBrains Mono, monospace";
-    ctx.fillStyle = inZone ? "#38bdf8" : "#64748b";
+    ctx.fillStyle = inZone ? "#34d399" : !inDangerZone ? "#f59e0b" : "#f87171";
     const deg = ((currentTheta * 180) / Math.PI).toFixed(1);
-    ctx.fillText(`Angle: ${deg}°`, 15, 25);
+    ctx.fillText(`Pole Angle: ${deg}°`, 15, 25);
+    
+    ctx.fillStyle = "#94a3b8";
     ctx.fillText(`Cart Position: ${currentX.toFixed(2)}m`, 15, 38);
 
     // Torques/Applied Force representation
     if (Math.abs(appliedForce) > 0.01) {
-      ctx.strokeStyle = appliedForce > 0 ? "#0284c7" : "#f43f5e";
+      // Emerald green for push right, hot rose-pink for left
+      const isRightForce = appliedForce > 0;
+      ctx.strokeStyle = isRightForce ? "#10b981" : "#f43f5e";
       ctx.lineWidth = 4;
       ctx.beginPath();
       // Arrow pointing right
-      if (appliedForce > 0) {
+      if (isRightForce) {
         ctx.moveTo(cartX - cartW / 2 - 30, cartY + cartH / 2);
         ctx.lineTo(cartX - cartW / 2 - 5, cartY + cartH / 2);
         ctx.stroke();
@@ -219,7 +266,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         ctx.lineTo(cartX - cartW / 2 - 12, cartY + cartH / 2 - 5);
         ctx.lineTo(cartX - cartW / 2 - 12, cartY + cartH / 2 + 5);
         ctx.closePath();
-        ctx.fillStyle = "#0284c7";
+        ctx.fillStyle = "#10b981";
         ctx.fill();
       } else {
         ctx.moveTo(cartX + cartW / 2 + 30, cartY + cartH / 2);
