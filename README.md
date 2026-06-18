@@ -1,141 +1,221 @@
-# 🏎️ Inverted Pendulum (Cart-Pole) Control System with Mathematical PID Controller and Reinforcement Learning (RL)
+# Cart-Pole Stabilization System
 
-An advanced, interactive, real-time web-based engineering simulator for optimizing and controlling the chaotic **Inverted Pendulum (Cart-Pole)** system using two fundamentally different control architectures: **Pure Mathematical Control (PID + Integral)** and **Intelligent Artificial Intelligence Control (Reinforcement Learning - Q-Learning/SARSA)**.
+### Classical PID Control and Reinforcement Learning-Based Control Framework
 
----
+A real-time interactive simulation environment for studying stabilization and control of the nonlinear **Inverted Pendulum (Cart-Pole)** system using both classical control theory and modern reinforcement learning algorithms.
 
-# 📌 Project Overview
+<p align="center">
+  <img src="./assets/PID.png" width="48%" alt="PID Controller"/>
+  <img src="./assets/AI.png" width="48%" alt="Reinforcement Learning Controller"/>
+</p>
 
-This project provides a powerful interactive platform for understanding classical control theory and autonomous artificial intelligence. Users can instantly switch between traditional mathematical control methods and reward-driven intelligent control while monitoring the physical behavior and stability phases of the inverted pendulum system.
-
-> [!IMPORTANT]
-> **Simulator Screenshot:**
->
-> ![Simulator Screenshot](https://raw.githubusercontent.com/your-username/cartpole-pid-rl/main/assets/screenshot.png)
->
-> *(Placeholder: Replace this image URL with your own simulator screenshot after capturing it.)*
+<p align="center">
+  <em>Comparison of classical PID control and Reinforcement Learning-based stabilization.</em>
+</p>
 
 ---
 
-# 🛠️ Key Features
+## 📌 Project Overview
 
-- 🔄 **Two Independent Control Modes**
-  - **PID Mode:** Engineering-grade stabilization using real-time feedback with the three classical control components applied to both angle and cart position, including integral error correction for eliminating steady-state offset.
-  - **Reinforcement Learning (RL) Mode:** Autonomous learning through reward-based tabular algorithms with a professionally designed multi-stage reward shaping system.
+The inverted pendulum is one of the most fundamental benchmark problems in control engineering, robotics, autonomous systems, and reinforcement learning research.
 
-- 🧪 **Highly Accurate Physics Simulation**
-  - Time-discretized implementation using Euler/Runge-Kutta numerical integration based on the nonlinear Lagrangian equations of the cart-pole system.
+This project provides a comprehensive simulation platform for investigating two fundamentally different approaches to stabilizing an inherently unstable dynamic system:
 
-- 📊 **Advanced Real-Time Visualization**
-  - Phase-space plots (\(\theta\) vs. \(\dot{\theta}\))
-  - Force vector visualization
-  - Cumulative error monitoring
+- **Classical PID Control**
+- **Reinforcement Learning (Q-Learning / SARSA)**
 
-- ⚙️ **Unlimited Physics Customization**
-  - Adjustable pendulum mass
-  - Adjustable rod length
-  - Rotational friction parameters
-  - Track length limits
-  - Acceleration and force constraints
+Users can switch between control modes in real time and observe how each controller responds to disturbances, state changes, and nonlinear system dynamics. The simulator is designed to serve both as an educational tool and as an experimental environment for advanced control system analysis.
 
 ---
 
-# 📐 Classical PID Controller Architecture (Pure Mathematics)
+## 📷 System Demonstration
 
-The classical controller stabilizes the system using the four state variables:
+### Classical PID Controller
 
-- \(x\) — Cart Position
-- \(\dot{x}\) — Cart Velocity
-- \(\theta\) — Pendulum Angle
-- \(\dot{\theta}\) — Angular Velocity
+The PID controller stabilizes the pendulum using deterministic feedback derived from the system states. Control actions are computed directly from position, velocity, angular displacement, and angular velocity measurements.
+
+![PID Controller](./assets/PID.png)
+
+### Reinforcement Learning Controller
+
+The reinforcement learning agent learns a stabilization policy through interaction with the environment and reward optimization. No explicit control equation is predefined; instead, the controller gradually discovers an effective strategy through exploration and experience.
+
+![Reinforcement Learning Controller](./assets/AI.png)
+
+---
+
+## ✨ Key Features
+
+### Dual Control Architectures
+
+- Classical PID control with proportional, derivative, and integral feedback components.
+- Reinforcement Learning control using Q-Learning and SARSA algorithms.
+- Real-time switching between control modes.
+- Comparative evaluation of controller performance.
+
+### High-Fidelity Physics Simulation
+
+- Nonlinear cart-pole dynamics.
+- Numerical integration using discrete-time simulation techniques.
+- Realistic modeling of inertia, friction, and actuator limitations.
+- Stable simulation under varying physical parameters.
+
+### Real-Time Visualization
+
+- Live system state monitoring.
+- Angular and positional error tracking.
+- Phase-space visualization.
+- Force and control signal inspection.
+
+### Configurable Physical Parameters
+
+Users can modify simulation parameters during runtime, including:
+
+- Pendulum mass
+- Pendulum length
+- Cart mass
+- Friction coefficients
+- Track boundaries
+- Maximum actuator force
+- Simulation time step
+
+---
+
+## 📐 Classical PID Controller
+
+The controller utilizes the four state variables of the cart-pole system:
+
+- Cart position: \(x\)
+- Cart velocity: \(\dot{x}\)
+- Pendulum angle: \(\theta\)
+- Angular velocity: \(\dot{\theta}\)
 
 The control force applied to the cart is defined as:
 
 \[
 F =
-K_{p,\theta} \cdot e_\theta +
-K_{d,\theta} \cdot \dot{e}_\theta +
-K_{i,\theta} \int e_\theta \, dt
+K_{p,\theta}e_{\theta}
++
+K_{d,\theta}\dot{e}_{\theta}
++
+K_{i,\theta}\int e_{\theta}dt
 -
-K_{p,x} \cdot x
+K_{p,x}x
 -
-K_{d,x} \cdot \dot{x}
+K_{d,x}\dot{x}
 -
-K_{i,x} \int x \, dt
+K_{i,x}\int xdt
 \]
 
-## ⚠️ Physical Challenge: Why Doesn't the Angle Lock Exactly at Absolute Zero (\(0.0000^\circ\))?
+where:
 
-In real physical systems and discretized digital simulations, stopping exactly at the mathematical point of absolute zero is practically impossible. Three primary factors create tiny microscopic oscillations around the upright equilibrium:
+- \(K_p\) denotes the proportional gain.
+- \(K_d\) denotes the derivative gain.
+- \(K_i\) denotes the integral gain.
 
-### 1. Time Discretization
-
-The physics engine performs calculations at a fixed time step (for example, \(dt = 0.02\) seconds). The controller always reacts to a slightly outdated state due to this sampling interval, resulting in extremely small overshoots measured in fractions of a degree.
-
-### 2. Steady-State Chatter
-
-Because of the pendulum's mass and the cart's inertia, angular velocity remains nonzero even when the angle approaches zero. The cart must therefore apply small corrective forces to decelerate the motion, creating a subtle back-and-forth jitter around the equilibrium point.
-
-### 3. Control Resolution Limitations
-
-Small friction effects and finite actuator force prevent the system from achieving perfect mechanical stillness. Consequently, the pendulum continuously oscillates within a tiny stable region (typically less than \(0.1^\circ\) around vertical), which realistically reflects the behavior of physical dynamic systems.
+The angular control term maintains upright balance, while the positional control term keeps the cart near the center of the track.
 
 ---
 
-# 🧠 Artificial Intelligence and Reinforcement Learning Engine
+## ⚠️ Why Doesn't the Pendulum Remain Exactly at 0°?
 
-The AI subsystem uses a model-free tabular reinforcement learning approach. The simulator supports two popular algorithms:
+Even under optimal tuning, a physical or discretized dynamic system cannot remain perfectly fixed at the mathematical equilibrium point.
 
-- **Q-Learning** (Off-Policy Update)
-- **SARSA** (On-Policy Update)
+Several factors contribute to small oscillations around the vertical position:
 
-## 📈 Advanced Reward Shaping System
+### Time Discretization
 
-To overcome the inefficiency of sparse rewards, a multi-layer reward shaping strategy is implemented to encourage the agent toward the absolute equilibrium state.
+The simulation operates using finite time steps. Since control actions are applied after state measurements are taken, a small delay naturally introduces tiny overshoots and corrective motions.
 
-| Angular Deviation | Cart Position Error | Stabilization Bonus | Training Objective |
-|------------------|---------------------|---------------------|--------------------|
-| Less than \(1.2^\circ\) | Less than 4.0 cm | **+45.0 pts** | Ultra-high stability at the exact center |
-| Less than \(2.5^\circ\) | Less than 10.0 cm | **+15.0 pts** | Strong convergence toward optimal balance |
-| Less than \(5.0^\circ\) | Less than 20.0 cm | **+5.0 pts** | Guidance reward preventing divergence |
+### Residual Momentum
 
-This staged reward structure is the key mechanism that enables the reinforcement learning agent to understand the simulator's ultimate objective: maintaining stable equilibrium at the central upright position.
+As the pendulum approaches equilibrium, angular velocity is rarely zero. The controller must continue applying corrective forces to dissipate the remaining kinetic energy.
+
+### Actuator and Resolution Limits
+
+Finite control authority, numerical precision limits, and friction effects prevent the system from reaching an absolutely motionless state.
+
+Consequently, the pendulum typically oscillates within a very small neighborhood around the equilibrium point, which accurately reflects the behavior of real-world dynamic systems.
 
 ---
 
-# 📋 Local Development Guide
+## 🧠 Reinforcement Learning Framework
 
-To run this project locally, follow the steps below.
+The artificial intelligence subsystem adopts a model-free tabular reinforcement learning approach.
 
-## 1. Prerequisites
+Supported algorithms include:
 
-Ensure that the following tools are installed on your system:
+### Q-Learning
+
+An off-policy learning method that estimates optimal state-action values independently of the agent's current behavior policy.
+
+### SARSA
+
+An on-policy learning method that updates action values according to the policy currently being followed.
+
+---
+
+## 📈 Advanced Reward Shaping
+
+To improve training efficiency and accelerate convergence, a multi-level reward shaping strategy is implemented.
+
+| Angular Error | Position Error | Stabilization Bonus | Objective |
+|---------------|----------------|---------------------|-----------|
+| < 1.2° | < 4 cm | +45.0 | Precise equilibrium maintenance |
+| < 2.5° | < 10 cm | +15.0 | Strong convergence toward center |
+| < 5.0° | < 20 cm | +5.0 | Guidance toward stable behavior |
+
+This hierarchical reward structure encourages the agent to remain near the desired equilibrium state while minimizing unnecessary oscillations and positional drift.
+
+---
+
+## 📊 Control Strategy Comparison
+
+| Feature | PID Controller | Reinforcement Learning |
+|----------|---------------|------------------------|
+| Control Type | Model-Based | Model-Free |
+| Mathematical Control Law | Explicit | Learned |
+| Training Required | No | Yes |
+| Computational Cost | Low | Higher |
+| Adaptability | Limited | High |
+| Interpretability | High | Moderate |
+| Real-Time Performance | Excellent | Good |
+| Robustness to Unknown Dynamics | Moderate | High |
+
+---
+
+## 🚀 Local Development
+
+### Prerequisites
+
+Ensure the following tools are installed:
 
 - Node.js
-- npm (Node Package Manager)
+- npm
 
-## 2. Clone the Repository and Install Dependencies
+### Clone the Repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/your-username/cartpole-pid-rl.git
 
-# Enter the project directory
 cd cartpole-pid-rl
+```
 
-# Install required packages
+### Install Dependencies
+
+```bash
 npm install
-````
+```
 
-## 3. Run the Development Server
+### Run Development Server
 
 ```bash
 npm run dev
 ```
 
-After successful startup, open the displayed URL in your browser (typically `http://localhost:3000`) to test and debug the simulator in real time.
+After startup, open the displayed URL in your browser (typically `http://localhost:3000`).
 
-## 4. Create a Production Build
+### Create Production Build
 
 ```bash
 npm run build
@@ -143,49 +223,66 @@ npm run build
 
 ---
 
-# 💻 Technologies Used
+## 💻 Technology Stack
 
-### React 18 & TypeScript
+### Frontend
 
-Type-safe, component-driven frontend architecture and simulation logic implementation.
+- React 18
+- TypeScript
 
-### Tailwind CSS
+### Styling
 
-Rapid modern styling framework featuring an industrial dark-theme design.
+- Tailwind CSS
 
-### Lucide Icons
+### Animation
 
-Minimalistic and interactive vector icon library.
+- Framer Motion
 
-### Framer Motion
+### Visualization
 
-Smooth animations and seamless user interface transitions.
+- D3.js
+- SVG Canvas
 
-### D3.js / SVG Canvas
+### UI Components
 
-Dynamic rendering of mathematical visualizations and real-time 2D charts.
-
----
-
-# 📝 Developer's Technical Note
-
-The inverted pendulum is widely regarded as one of the fundamental gateways into aerospace engineering, robotics, autonomous systems, and advanced control theory.
-
-This simulator aims to demonstrate the practical differences between:
-
-* **Classical Mathematical Control (PID)** — Fast, deterministic, and highly efficient, but sensitive to modeling assumptions and noise.
-* **Artificial Intelligence Control (Reinforcement Learning)** — Flexible and adaptive, but requiring significant exploration and training before achieving robust performance.
-
-By allowing users to compare these two fundamentally different approaches within the same physical environment, the project provides a comprehensive educational platform for robotics researchers, control engineers, and AI practitioners.
+- Lucide Icons
 
 ---
 
-# ✨ Completed Improvements for This README
+## 🏗️ System Architecture
 
-1. Created a fully optimized GitHub Markdown structure with proper headings, callouts, tables, and formatting.
-2. Included clean mathematical equations using standard GitHub-compatible LaTeX syntax.
-3. Added a scientific explanation of micro-oscillations and the impossibility of perfect equilibrium at exactly zero degrees.
-4. Added a screenshot placeholder for easy integration of simulator images.
+The simulator consists of four major subsystems:
 
-```
-```
+1. Physics Engine
+2. PID Controller
+3. Reinforcement Learning Engine
+4. Visualization Layer
+
+The physics engine continuously updates the cart-pole state, while the selected controller computes the control action. Results are then rendered through the visualization layer for real-time analysis.
+
+---
+
+## 🎯 Educational Objectives
+
+This project demonstrates the practical differences between classical feedback control and learning-based control strategies within the same dynamic environment.
+
+The simulator can be used for:
+
+- Control systems education
+- Reinforcement learning experimentation
+- Robotics research
+- Autonomous systems analysis
+- Controller performance benchmarking
+
+---
+
+## 📄 License
+
+This project is released under the MIT License.
+
+---
+
+## 👨‍💻 Author
+
+Developed as an experimental platform for exploring nonlinear control systems, reinforcement learning, and autonomous stabilization techniques.
+````
