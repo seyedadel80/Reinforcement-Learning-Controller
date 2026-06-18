@@ -15,12 +15,12 @@ The inverted pendulum is a classic benchmark problem in control engineering and 
 ### Classical PID Controller
 The PID controller stabilizes the pendulum using deterministic feedback derived directly from the system states (position, velocity, angle, and angular velocity). 
 
-![PID Controller](./assets/PID.png)
+![PID Controller](PID.png)
 
 ### Reinforcement Learning Controller
 The RL agent learns a stabilization policy through environmental interaction and reward optimization, discovering an effective strategy entirely through exploration and experience.
 
-![Reinforcement Learning Controller](./assets/AI.png)
+![Reinforcement Learning Controller](AI.png)
 
 ---
 
