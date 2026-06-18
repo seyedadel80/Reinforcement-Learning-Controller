@@ -1,4 +1,3 @@
-````markdown
 # 🏎️ Inverted Pendulum (Cart-Pole) Control System with Mathematical PID Controller and Reinforcement Learning (RL)
 
 An advanced, interactive, real-time web-based engineering simulator for optimizing and controlling the chaotic **Inverted Pendulum (Cart-Pole)** system using two fundamentally different control architectures: **Pure Mathematical Control (PID + Integral)** and **Intelligent Artificial Intelligence Control (Reinforcement Learning - Q-Learning/SARSA)**.
